@@ -1,0 +1,3 @@
+{
+  "app": "go build ../OgameStats/ ; strip -s ../OgameStats/GoStatOgame; zip ../OgameStats/GoStatOgame.zip ../OgameStats/GoStatOgame; mvn -e -q exec:java"
+}
