@@ -6,7 +6,7 @@
 
     <groupId>it.alessiosavi.cdk.initcluster</groupId>
     <artifactId>init-cluster</artifactId>
-    <version>v0.0.1</version>
+    <version>v0.0.2</version>
 
 
     <properties>
@@ -54,12 +54,17 @@
             <artifactId>dynamodb</artifactId>
             <version>${aws.cdk.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awscdk</groupId>
+            <artifactId>events-targets</artifactId>
+            <version>${aws.cdk.version}</version>
+        </dependency>
 
         <!-- https://mvnrepository.com/artifact/junit/junit -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <version>4.13</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

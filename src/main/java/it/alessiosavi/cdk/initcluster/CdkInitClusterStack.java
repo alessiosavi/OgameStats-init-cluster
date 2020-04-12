@@ -6,6 +6,9 @@ import software.amazon.awscdk.services.apigateway.RestApi;
 import software.amazon.awscdk.services.dynamodb.Attribute;
 import software.amazon.awscdk.services.dynamodb.AttributeType;
 import software.amazon.awscdk.services.dynamodb.Table;
+import software.amazon.awscdk.services.events.Rule;
+import software.amazon.awscdk.services.events.Schedule;
+import software.amazon.awscdk.services.events.targets.LambdaFunction;
 import software.amazon.awscdk.services.lambda.Code;
 import software.amazon.awscdk.services.lambda.Function;
 import software.amazon.awscdk.services.lambda.Runtime;
@@ -24,41 +27,49 @@ public class CdkInitClusterStack extends Stack {
 
         Table playerData = CreatePlayerDataTable("PlayerData");
         Function lambdaStats = CreateLambdaFunctionStats(playerData.getTableName());
-        Function lambdaUpdater = CreateLambdaFunctionUpdater(playerData.getTableName());
+        Function lambdaUpdater = CreateLambdaFunctionUpdater(playerData.getTableName(), "166");
 
         playerData.grantReadData(lambdaStats);
         playerData.grantReadWriteData(lambdaUpdater);
 
-        RestApi api =
-                RestApi.Builder.create(this, "OgameStats-REST-API")
-                        .restApiName("OgameStatsRestAPI")
-                        .description(
-                                "This service services return the possible candidates attack.")
-                        .build();
+        RestApi api = createRestApi(lambdaUpdater);
 
-        LambdaIntegration ogameStatsIntegration =
-                LambdaIntegration.Builder.create(lambdaStats)
-                        .requestTemplates(new HashMap<String, String>() {
-                            {
-                                put("application/json", "{ \"statusCode\": \"200\" }");
-                            }
-                        })
-                        .build();
 
-        api.getRoot().addMethod("POST", ogameStatsIntegration);
+        Rule rule = Rule.Builder.create(this, "PopulatePlayerDBREST_CRON")
+                .description("Run every Monday")
+                .schedule(Schedule.expression("cron(0 12 * * MON)"))
+                .build();
+
+        rule.addTarget(new LambdaFunction(lambdaUpdater));
+
     }
 
-    private Function CreateLambdaFunctionUpdater(String tableName) {
+    private RestApi createRestApi(Function lambda) {
+        RestApi api = RestApi.Builder.create(this, "PopulatePlayerDBREST")
+                .restApiName("PopulatePlayerDBRestApi")
+                .description("This service is delegated to populate the DynamoDB with all the data related to the players.")
+                .build();
+        LambdaIntegration ogameStatsIntegration = LambdaIntegration.Builder.create(lambda)
+                .requestTemplates(new HashMap<String, String>() {{
+                    put("application/json", "{ \"statusCode\": \"200\" }");
+                }})
+                .build();
+        api.getRoot().addMethod("GET", ogameStatsIntegration);
+        return api;
+    }
+
+    private Function CreateLambdaFunctionUpdater(String tableName, String uni) {
         Map<String, String> env = new HashMap<>();
         env.put("table_name", tableName);
+        env.put("uni", uni);
         return Function.Builder.create(this, "PopulatePlayerDB")
                 .code(Code.fromAsset(Costants.OgameSyncBINPath))
                 .handler("PopulatePlayerDB")
-                .timeout(Duration.seconds(300))
+                .timeout(Duration.seconds(128))
                 .functionName("PopulatePlayerDB")
                 .runtime(Runtime.GO_1_X)
                 .environment(env)
-                .memorySize(300)
+                .memorySize(3 * 60) // 3 minutes
                 .retryAttempts(1)
                 .build();
     }
@@ -66,8 +77,7 @@ public class CdkInitClusterStack extends Stack {
     private Table CreatePlayerDataTable(String TABLE_NAME) {
         return Table.Builder.create(this, TABLE_NAME)
                 .tableName(TABLE_NAME)
-                .partitionKey(
-                        Attribute.builder().type(AttributeType.STRING).name("ID").build())
+                .partitionKey(Attribute.builder().type(AttributeType.STRING).name("ID").build())
                 .sortKey(Attribute.builder()
                         .type(AttributeType.STRING)
                         .name("Username")
