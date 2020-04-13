@@ -37,7 +37,7 @@ public class CdkInitClusterStack extends Stack {
 
         Rule rule = Rule.Builder.create(this, "PopulatePlayerDBREST_CRON")
                 .description("Run every Monday")
-                .schedule(Schedule.expression("cron(0 12 * * MON)"))
+                .schedule(Schedule.expression("cron(0 12 ? * MON *)"))
                 .build();
 
         rule.addTarget(new LambdaFunction(lambdaUpdater));
@@ -82,7 +82,7 @@ public class CdkInitClusterStack extends Stack {
                         .type(AttributeType.STRING)
                         .name("Username")
                         .build())
-                .removalPolicy(RemovalPolicy.RETAIN)
+                .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
     }
 
