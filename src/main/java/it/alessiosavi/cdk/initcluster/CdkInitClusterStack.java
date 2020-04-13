@@ -1,8 +1,7 @@
 package it.alessiosavi.cdk.initcluster;
 
 import software.amazon.awscdk.core.*;
-import software.amazon.awscdk.services.apigateway.LambdaIntegration;
-import software.amazon.awscdk.services.apigateway.RestApi;
+import software.amazon.awscdk.services.apigateway.*;
 import software.amazon.awscdk.services.dynamodb.Attribute;
 import software.amazon.awscdk.services.dynamodb.AttributeType;
 import software.amazon.awscdk.services.dynamodb.Table;
@@ -13,7 +12,9 @@ import software.amazon.awscdk.services.lambda.Code;
 import software.amazon.awscdk.services.lambda.Function;
 import software.amazon.awscdk.services.lambda.Runtime;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class CdkInitClusterStack extends Stack {
@@ -32,29 +33,83 @@ public class CdkInitClusterStack extends Stack {
         playerData.grantReadData(lambdaStats);
         playerData.grantReadWriteData(lambdaUpdater);
 
-        RestApi api = createRestApi(lambdaUpdater);
+        RestApi api = new RestApi(this, "itemsApi",
+                RestApiProps.builder().restApiName("Items Service").build());
 
+        api.getRoot().addResource("v1");
+        api.getRoot().addMethod("POST", new LambdaIntegration(lambdaStats));
+        addCorsOptions(api);
+
+//        RestApi restApiStats = createRestApiStats(lambdaStats);
+//        RestApi api = createRestApiUpdater(lambdaUpdater);
+    }
+
+
+    private void addCorsOptions(RestApi api) {
+        List<MethodResponse> methoedResponses = new ArrayList<>();
+
+        Map<String, Boolean> responseParameters = new HashMap<>();
+        responseParameters.put("method.response.header.Access-Control-Allow-Headers", Boolean.TRUE);
+        responseParameters.put("method.response.header.Access-Control-Allow-Methods", Boolean.TRUE);
+        responseParameters.put("method.response.header.Access-Control-Allow-Credentials", Boolean.TRUE);
+        responseParameters.put("method.response.header.Access-Control-Allow-Origin", Boolean.TRUE);
+        methoedResponses.add(MethodResponse.builder()
+                .responseParameters(responseParameters)
+                .statusCode("200")
+                .build());
+        MethodOptions methodOptions = MethodOptions.builder()
+                .methodResponses(methoedResponses)
+                .build();
+
+        Map<String, String> requestTemplate = new HashMap<>();
+        requestTemplate.put("application/json", "{\"statusCode\": 200}");
+        List<IntegrationResponse> integrationResponses = new ArrayList<>();
+
+        Map<String, String> integrationResponseParameters = new HashMap<>();
+        integrationResponseParameters.put("method.response.header.Access-Control-Allow-Headers", "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'");
+        integrationResponseParameters.put("method.response.header.Access-Control-Allow-Origin", "'*'");
+        integrationResponseParameters.put("method.response.header.Access-Control-Allow-Credentials", "'false'");
+        integrationResponseParameters.put("method.response.header.Access-Control-Allow-Methods", "'OPTIONS,GET,PUT,POST,DELETE'");
+        integrationResponses.add(IntegrationResponse.builder()
+                .responseParameters(integrationResponseParameters)
+                .statusCode("200")
+                .build());
+
+        Integration methodIntegration = MockIntegration.Builder.create()
+                .integrationResponses(integrationResponses)
+                .passthroughBehavior(PassthroughBehavior.NEVER)
+                .requestTemplates(requestTemplate)
+                .build();
+
+        api.getRoot().addMethod("OPTIONS", methodIntegration, methodOptions);
+    }
+
+
+    private LambdaRestApi createRestApiStats(Function lambda) {
+
+        return LambdaRestApi.Builder.create(this, "OgameStatsREST")
+                .restApiName("OgameStatsREST")
+                .description("This service is delegated to compute the candidate attack")
+                .handler(lambda)
+                .proxy(false)
+                .build();
+    }
+
+
+    private RestApi createRestApiUpdater(Function lambda) {
+        LambdaRestApi api = LambdaRestApi.Builder.create(this, "PopulatePlayerDBREST")
+                .restApiName("PopulatePlayerDBRestApi")
+                .description("This service is delegated to populate the DynamoDB with all the data related to the players.")
+                .handler(lambda)
+                .proxy(false)
+                .build();
 
         Rule rule = Rule.Builder.create(this, "PopulatePlayerDBREST_CRON")
                 .description("Run every Monday")
                 .schedule(Schedule.expression("cron(0 12 ? * MON *)"))
                 .build();
 
-        rule.addTarget(new LambdaFunction(lambdaUpdater));
-
-    }
-
-    private RestApi createRestApi(Function lambda) {
-        RestApi api = RestApi.Builder.create(this, "PopulatePlayerDBREST")
-                .restApiName("PopulatePlayerDBRestApi")
-                .description("This service is delegated to populate the DynamoDB with all the data related to the players.")
-                .build();
-        LambdaIntegration ogameStatsIntegration = LambdaIntegration.Builder.create(lambda)
-                .requestTemplates(new HashMap<String, String>() {{
-                    put("application/json", "{ \"statusCode\": \"200\" }");
-                }})
-                .build();
-        api.getRoot().addMethod("GET", ogameStatsIntegration);
+        rule.addTarget(new LambdaFunction(lambda));
         return api;
     }
 
@@ -92,11 +147,11 @@ public class CdkInitClusterStack extends Stack {
         return Function.Builder.create(this, "OgameStatsLambda")
                 .code(Code.fromAsset(Costants.OgameStatsBINPath))
                 .handler("GoStatOgame")
-                .timeout(Duration.seconds(30))
+                .timeout(Duration.seconds(10))
                 .functionName("OgameStatsLambda")
                 .runtime(Runtime.GO_1_X)
                 .environment(env)
-                .memorySize(300)
+                .memorySize(128)
                 .retryAttempts(1)
                 .build();
     }
